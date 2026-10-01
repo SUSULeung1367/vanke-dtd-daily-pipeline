@@ -1,0 +1,26 @@
+# Python and notebook by-products
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Local caches
+.codex_sheet_tmp/
+.yfinance_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Generated demonstration workspaces and Temporary test artifacts
+demo_workspace/
+Temporary/
+temporary/
+temporary_output.xlsx
+vanke_dtd_temporary_data.xlsx
+.vanke_confirm_*.xlsx
+
+# Local editor files
+.vscode/
+.idea/
+*.swp
