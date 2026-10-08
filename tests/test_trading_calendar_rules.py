@@ -1,7 +1,7 @@
 import pandas as pd
 
-from vanke_dtd.dtd import _next_hk_open, load_hk_calendar
-from vanke_dtd.repository import repository_data
+from vanke_dtd_pipeline.daily_dtd_calculator import _next_hk_open, load_hk_calendar
+from vanke_dtd_pipeline.project_data_paths import repository_data
 
 
 def test_first_hk_open_day_after_the_confirmed_baseline_is_20251215():

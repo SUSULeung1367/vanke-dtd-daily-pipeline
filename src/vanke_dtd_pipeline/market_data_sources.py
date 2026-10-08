@@ -9,8 +9,8 @@ import pandas as pd
 import requests
 import yfinance as yf
 
-from .constants import HKMA_URL, MAX_ATTEMPTS, REQUEST_TIMEOUT, RETRY_DELAYS_SECONDS
-from .workspace import current_workspace
+from .pipeline_config import HKMA_URL, MAX_ATTEMPTS, REQUEST_TIMEOUT, RETRY_DELAYS_SECONDS
+from .runtime_workspace import current_workspace
 
 
 def run_with_retry(source_name, data_date, fetch_once):
@@ -99,7 +99,7 @@ def get_online_close(source_name, ticker, data_date, require_exact):
 
 
 def load_risk_free_cache():
-    path = current_workspace().risk_free_cache
+    path = current_workspace().risk_free_rate_cache
     if not path.exists():
         return pd.DataFrame(columns=["Date", "Day", "Risk_Free_Rate", "Risk_Free_Decimal"])
     cache = pd.read_excel(path)
@@ -119,7 +119,7 @@ def save_risk_free_cache(cache, data_date, value):
     updated = pd.concat([cache, new_row], ignore_index=True)
     updated["Date"] = pd.to_datetime(updated["Date"]).dt.normalize()
     updated = updated.sort_values("Date").drop_duplicates("Date", keep="last").reset_index(drop=True)
-    updated.to_excel(current_workspace().risk_free_cache, index=False)
+    updated.to_excel(current_workspace().risk_free_rate_cache, index=False)
 
 
 def get_hkma_risk_free(data_date, require_exact, update_cache):

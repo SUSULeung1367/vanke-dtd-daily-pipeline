@@ -1,12 +1,12 @@
 """Calendar-gated daily DTD calculation module.
 
-The module reads confirmed history from ``vanke.xlsx``, reads incremental rows
-from ``data_temporary.xlsx``, and appends successful results to a separate
-``temporary_output.xlsx`` table with columns Comp_no, Date, and DTD.
+The module reads confirmed history, reads pending-review Input rows, and
+appends successful results to a pending-review Output table with columns
+Comp_no, Date, and DTD.
 
 Only dates marked HK_Open in the supplied calendar may produce DTD.  An open
 date must also be the next Hong Kong trading session after the last completed
-confirmed/temporary output date.
+confirmed or pending-review output date.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from openpyxl import Workbook, load_workbook
 from scipy.optimize import brentq, minimize_scalar
 from scipy.stats import norm
 
-from .constants import DTD_DELTA, DTD_LOOKBACK_DAYS, DTD_MIN_OBSERVATIONS, DTD_TRADING_DAYS_PER_YEAR
+from .pipeline_config import DTD_DELTA, DTD_LOOKBACK_DAYS, DTD_MIN_OBSERVATIONS, DTD_TRADING_DAYS_PER_YEAR
 
 
 COLS = {
@@ -425,7 +425,7 @@ def calculate_dtd(
     target_rows = data[data[COLS["date"]] == as_of]
     if target_rows.empty:
         raise InputDataError(
-            f"Temporary Input has no row for target trading date {as_of.strftime('%Y%m%d')}"
+            f"Pending-review Input has no row for target trading date {as_of.strftime('%Y%m%d')}"
         )
     row = target_rows.iloc[-1]
     sigma, window = estimate_sigma(
@@ -517,7 +517,7 @@ def _validate_output_history(
             temporary[COLS["date"]].duplicated(keep=False), COLS["date"]
         ]
         raise OutputIntegrityError(
-            "Temporary Output contains duplicate dates: "
+            "Pending-review Output contains duplicate dates: "
             + ", ".join(duplicates.dt.strftime("%Y-%m-%d").unique())
         )
     if not temporary.empty:
@@ -531,7 +531,7 @@ def _validate_output_history(
         if not invalid.empty:
             dates = invalid[COLS["date"]].dt.strftime("%Y-%m-%d").tolist()
             raise OutputIntegrityError(
-                f"Temporary Output contains closed or off-calendar dates: {dates}"
+                f"Pending-review Output contains closed or off-calendar dates: {dates}"
             )
         after_anchor = temporary[temporary[COLS["date"]] > confirmed_last]
         if not after_anchor.empty:
@@ -549,7 +549,7 @@ def _validate_output_history(
             if missing:
                 missing_text = ", ".join(date.strftime("%Y-%m-%d") for date in missing)
                 raise OutputIntegrityError(
-                    f"Temporary Output is not continuous; missing: {missing_text}"
+                    f"Pending-review Output is not continuous; missing: {missing_text}"
                 )
     completed = (
         confirmed
@@ -595,7 +595,7 @@ def _append_temporary_output(
     for row in sheet.iter_rows(min_row=2, max_col=3, values_only=True):
         if row[1] is not None and _parse_single_date(row[1]) == date:
             raise AlreadyProcessedError(
-                f"Temporary Output already contains {date.date()}; it will not be overwritten"
+                f"Pending-review Output already contains {date.date()}; it will not be overwritten"
             )
     sheet.append([company_value, date_int, float(dtd)])
 
@@ -678,7 +678,7 @@ def process_daily_dtd(
     history = combine_input_history(confirmed_input, temporary_input, company)
     if not (history[COLS["date"]] == target).any():
         raise InputDataError(
-            f"Temporary Input has no row for {target.strftime('%Y%m%d')}"
+            f"Pending-review Input has no row for {target.strftime('%Y%m%d')}"
         )
     diagnostics = calculate_dtd(
         history,
@@ -690,7 +690,7 @@ def process_daily_dtd(
     )
     if diagnostics.source_status != "temporary":
         raise InputDataError(
-            f"Target date {target.date()} is not a Temporary Input row; confirmed dates are not recalculated"
+            f"Target date {target.date()} is not a pending-review Input row; confirmed dates are not recalculated"
         )
 
     if write_output:
@@ -712,7 +712,7 @@ def process_daily_dtd(
         message=(
             f"{target.date()} is the next HK trading date; DTD={diagnostics.dtd:.10f}. "
             + (
-                "Written to Temporary Output."
+                "Written to pending-review Output."
                 if write_output
                 else "No file was written."
             )

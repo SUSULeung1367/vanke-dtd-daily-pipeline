@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .constants import (
+from .pipeline_config import (
     BALANCE_SHEET_COLUMNS, FX_MAX, FX_MIN, MAX_FX_CHANGE,
     MAX_MARKET_CAP_CHANGE, MAX_PRICE_CHANGE, MAX_RISK_FREE_CHANGE_PP,
     RISK_FREE_MAX, RISK_FREE_MIN,

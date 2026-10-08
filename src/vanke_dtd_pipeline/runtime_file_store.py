@@ -10,8 +10,8 @@ from copy import copy
 import pandas as pd
 from openpyxl import load_workbook
 
-from .constants import INPUT_COLUMNS
-from .workspace import current_workspace
+from .pipeline_config import INPUT_COLUMNS
+from .runtime_workspace import current_workspace
 
 
 def read_excel_sheet_if_present(path, sheet_name):
@@ -41,11 +41,11 @@ def compare_approved_row(existing_row, new_row):
 def write_temporary_input(excel_output):
     """Write validated incremental rows using the confirmed Input schema/style."""
     paths = current_workspace()
-    workbook = load_workbook(paths.confirmed_vanke)
+    workbook = load_workbook(paths.confirmed_history)
     input_sheet = workbook["Input"]
     headers = [input_sheet.cell(1, column).value for column in range(1, len(INPUT_COLUMNS) + 1)]
     if headers != INPUT_COLUMNS:
-        raise RuntimeError("vanke.xlsx/Input schema changed; Temporary was not overwritten.")
+        raise RuntimeError("Confirmed Input schema changed; pending-review Input was not overwritten.")
     template_styles = [copy(input_sheet.cell(2, column)._style) for column in range(1, len(INPUT_COLUMNS) + 1)]
     template_row_height = input_sheet.row_dimensions[2].height
     if input_sheet.max_row > 1:
@@ -59,13 +59,13 @@ def write_temporary_input(excel_output):
             cell = input_sheet.cell(row_number, column_number, value=clean_value)
             cell._style = copy(template_styles[column_number - 1])
         input_sheet.row_dimensions[row_number].height = template_row_height
-    workbook.save(paths.temporary_input)
+    workbook.save(paths.pending_review_input)
 
 
 def update_temporary(record, save_result):
     """Insert one QC-approved HK-open row; never overwrite a prior temporary row."""
     paths = current_workspace()
-    existing = read_excel_sheet_if_present(paths.temporary_input, "Input")
+    existing = read_excel_sheet_if_present(paths.pending_review_input, "Input")
     if not existing.empty:
         existing["Date"] = pd.to_datetime(existing["Date"].astype(str).str.replace(r"\.0$", "", regex=True), format="%Y%m%d")
     if not record["HK_Open"]:
@@ -90,7 +90,7 @@ def update_temporary(record, save_result):
 
 def save_daily_datalog(record, attempt_rows):
     """Append/update the generated run audit file, keyed by data date."""
-    path = current_workspace().daily_datalog
+    path = current_workspace().market_data_audit
     daily = read_excel_sheet_if_present(path, "Daily_Result")
     attempts = read_excel_sheet_if_present(path, "API_Attempt_Log")
     daily = pd.concat([daily, pd.DataFrame([record])], ignore_index=True)

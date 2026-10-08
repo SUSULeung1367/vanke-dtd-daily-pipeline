@@ -1,4 +1,4 @@
-"""Display or apply a Checker decision in one generated workspace."""
+"""Display or record a Checker decision for one daily runtime workspace."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from vanke_dtd.checker import build_checker_table, confirm_dates
+from vanke_dtd_pipeline.daily_result_reviewer import build_checker_table, confirm_dates
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", type=Path, default=ROOT / "runtime" / "demo_workspace")
+    parser.add_argument("--workspace", type=Path, default=ROOT / "runtime" / "basic_test_workspace")
     parser.add_argument("--decision", choices=["PENDING", "APPROVE", "REJECT"], default="PENDING")
     parser.add_argument("--checker", help="Required for APPROVE or REJECT")
     parser.add_argument("--dates", nargs="+", help="YYYYMMDD dates for APPROVE or REJECT")

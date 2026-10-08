@@ -1,8 +1,11 @@
-"""Stable model, source and schema settings.
+"""Stable settings for the standard daily pipeline.
 
-Change a value here only when the data contract or model policy changes.  Demo
-dates and run mode belong in ``demo_settings.py`` instead.
+Change a value here only when the data contract or model policy changes.
+Fixed dates for the separate basic test belong in its command, not in this
+standard implementation.
 """
+
+DEFAULT_COMPANY = 5338
 
 CHINA_TICKER = "000002.SZ"
 HK_TICKER = "2202.HK"

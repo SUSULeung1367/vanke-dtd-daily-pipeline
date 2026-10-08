@@ -11,6 +11,8 @@ import uuid
 import pandas as pd
 from openpyxl import load_workbook
 
+from .runtime_workspace import WorkspacePaths
+
 
 INPUT_COLUMNS = [
     "Comp_no",
@@ -26,18 +28,16 @@ DTD_COLUMNS = ["Comp_no", "Date", "DTD"]
 
 
 def build_checker_table(workspace_dir) -> pd.DataFrame:
-    """Return one review table containing Temporary Input, DTD and QC."""
-    workspace = Path(workspace_dir).resolve()
-    inputs = pd.read_excel(
-        workspace / "vanke_dtd_temporary_data.xlsx", sheet_name="Input"
-    )
-    dtd_path = workspace / "temporary_output.xlsx"
+    """Return one review table containing pending-review Input, DTD and QC."""
+    paths = WorkspacePaths(Path(workspace_dir).resolve())
+    inputs = pd.read_excel(paths.pending_review_input, sheet_name="Input")
+    dtd_path = paths.pending_review_output
     dtd = (
         pd.read_excel(dtd_path, sheet_name="Output")
         if dtd_path.exists()
         else pd.DataFrame(columns=DTD_COLUMNS)
     )
-    log_path = workspace / "Vanke_Daily_Datalog.xlsx"
+    log_path = paths.market_data_audit
     daily = (
         pd.read_excel(log_path, sheet_name="Daily_Result")
         if log_path.exists()
@@ -77,7 +77,7 @@ def build_checker_table(workspace_dir) -> pd.DataFrame:
     review["Marker_Required"] = (
         review.get("Review_Flag", False).fillna(False).astype(bool)
     )
-    review["Production_Status"] = _production_status(workspace, review)
+    review["Production_Status"] = _production_status(paths, review)
     review["Date"] = review["_Date"].dt.strftime("%Y%m%d").astype(int)
     display_columns = [
         *INPUT_COLUMNS,
@@ -137,7 +137,8 @@ def confirm_dates(
 def _write_release(
     workspace: Path, selected: pd.DataFrame, checker_name: str, decision: str
 ) -> None:
-    confirmed_path = workspace / "vanke.xlsx"
+    paths = WorkspacePaths(workspace)
+    confirmed_path = paths.confirmed_history
     workbook = load_workbook(confirmed_path)
     input_sheet = workbook["Input"]
     output_sheet = workbook["Output"]
@@ -195,7 +196,7 @@ def _write_release(
             ]
         )
 
-    temp_path = workspace / f".vanke_confirm_{uuid.uuid4().hex}.xlsx"
+    temp_path = workspace / f".confirmed_history_update_{uuid.uuid4().hex}.xlsx"
     try:
         workbook.save(temp_path)
         os.replace(temp_path, confirmed_path)
@@ -234,8 +235,8 @@ def _qc_status(row) -> str:
     )
 
 
-def _production_status(workspace: Path, review: pd.DataFrame) -> pd.Series:
-    confirmed = pd.read_excel(workspace / "vanke.xlsx", sheet_name="Output")
+def _production_status(paths: WorkspacePaths, review: pd.DataFrame) -> pd.Series:
+    confirmed = pd.read_excel(paths.confirmed_history, sheet_name="Output")
     confirmed_dates = set(_parse_dates(confirmed["Date"]).dt.strftime("%Y%m%d"))
     return (
         review["_Date"]

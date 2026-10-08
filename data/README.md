@@ -1,14 +1,12 @@
-# Data guide — tracked source files
+# Data guide — inputs only, never generated results
 
-This directory contains the tracked inputs needed to understand or reproduce
-the Vanke demonstration. It is not a runtime output directory.
+This directory contains tracked inputs. It is not a runtime-output directory.
 
-- `baseline/` contains the supplied confirmed Vanke history and its historical
-  market-cap reference.
-- `controlled/` contains the calendar and effective-dated source inputs used
-  by a run.
-- `replay/` contains saved daily observations used by the deterministic demo.
+- `standard_inputs/` contains confirmed history, the trading calendar, company
+  data and the risk-free-rate cache used by the standard daily pipeline.
+- `basic_test_fixture/` contains the fixed saved market data used only by the
+  basic local test.
 
-Read [`../docs/data_dictionary.md`](../docs/data_dictionary.md) before editing
-any file here. Normal scripts copy the necessary inputs into `runtime/`; they
-must not modify this directory.
+Read [`../docs/data_guide.md`](../docs/data_guide.md) before editing any file
+here. Commands copy what they need into `runtime/`; normal runs must not modify
+this directory.

@@ -1,4 +1,4 @@
-"""Paths for one generated, isolated pipeline run."""
+"""Clear file paths for one generated, isolated pipeline run."""
 
 from __future__ import annotations
 
@@ -14,32 +14,32 @@ class WorkspacePaths:
     root: Path
 
     @property
-    def confirmed_vanke(self) -> Path:
-        return self.root / "vanke.xlsx"
+    def confirmed_history(self) -> Path:
+        return self.root / "vanke_confirmed_history.xlsx"
 
     @property
     def calendar(self) -> Path:
-        return self.root / "China_HK_Trading_Calendar.xlsx"
+        return self.root / "china_hk_trading_calendar.xlsx"
 
     @property
-    def issued_capital(self) -> Path:
-        return self.root / "Vanke Issued Capital DataLog.xlsx"
+    def company_data(self) -> Path:
+        return self.root / "vanke_effective_dated_company_data.xlsx"
 
     @property
-    def risk_free_cache(self) -> Path:
-        return self.root / "HKMA_Risk_Free_Daily.xlsx"
+    def risk_free_rate_cache(self) -> Path:
+        return self.root / "hkma_364_day_bill_yield_cache.xlsx"
 
     @property
-    def daily_datalog(self) -> Path:
-        return self.root / "Vanke_Daily_Datalog.xlsx"
+    def market_data_audit(self) -> Path:
+        return self.root / "daily_market_data_audit.xlsx"
 
     @property
-    def temporary_input(self) -> Path:
-        return self.root / "vanke_dtd_temporary_data.xlsx"
+    def pending_review_input(self) -> Path:
+        return self.root / "daily_dtd_input_pending_review.xlsx"
 
     @property
-    def temporary_output(self) -> Path:
-        return self.root / "temporary_output.xlsx"
+    def pending_review_output(self) -> Path:
+        return self.root / "daily_dtd_output_pending_review.xlsx"
 
     @property
     def yfinance_cache(self) -> Path:
@@ -63,7 +63,8 @@ def configure_workspace(root: str | Path) -> WorkspacePaths:
 def current_workspace() -> WorkspacePaths:
     if _current is None:
         raise RuntimeError(
-            "No runtime workspace is configured. Use workflow.prepare_demo_workspace() "
-            "or workspace.configure_workspace() first."
+            "No runtime workspace is configured. Use "
+            "daily_pipeline_runner.prepare_runtime_workspace() or "
+            "runtime_workspace.configure_workspace() first."
         )
     return _current

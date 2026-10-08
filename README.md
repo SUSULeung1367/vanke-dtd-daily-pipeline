@@ -1,10 +1,9 @@
 # Vanke Daily DTD Pipeline
 
-A reviewable, replayable, production-oriented data-engineering monitoring
-template for a daily China Vanke Distance-to-Default (DTD) workflow. The
-repository separates market-data preparation, quality control, DTD calculation
-and human release. It demonstrates how an incremental daily pipeline can be
-inspected, replayed and tested without overwriting confirmed history.
+A reviewable daily Vanke Distance-to-Default (DTD) pipeline. There is one
+standard implementation in `src/vanke_dtd_pipeline/`. The live daily command,
+basic local test, interactive demos and automated tests all call that same
+implementation; none contains a second DTD calculation.
 
 ## Why DTD matters
 
@@ -30,15 +29,14 @@ production-style monitoring workflow, not a deployed production service.
 
 ## Start here
 
-| If you want to... | Read or run... |
+| Your goal | Use this |
 |---|---|
-| Understand the architecture | [`docs/architecture.md`](docs/architecture.md) |
-| Understand every tracked dataset | [`docs/data_dictionary.md`](docs/data_dictionary.md) |
-| Understand configuration | [`docs/configuration.md`](docs/configuration.md) |
-| Understand the Checker/Marker rule | [`docs/governance.md`](docs/governance.md) |
-| Check that the project works locally | `python scripts/run_basic_test.py` |
-| Inspect or apply a Checker decision | `python scripts/run_checker.py` |
-| Run one date with live market data | `python scripts/run_daily.py --date YYYYMMDD` |
+| Check that the project works on your computer | `python commands/run_basic_pipeline_test.py` |
+| Run the daily pipeline with live market data | `python commands/run_live_daily_pipeline.py --date YYYYMMDD` |
+| Review or approve daily results | `python commands/run_daily_review.py` |
+| Understand the standard code | [`docs/system_architecture.md`](docs/system_architecture.md) |
+| Understand the input files | [`docs/data_guide.md`](docs/data_guide.md) |
+| Understand Checker and Marker | [`docs/daily_review_guide.md`](docs/daily_review_guide.md) |
 
 ## Environment setup
 
@@ -52,30 +50,34 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-The installation makes the `src/vanke_dtd` package available and installs
+The installation makes the `src/vanke_dtd_pipeline` package available and installs
 `pytest` for the test suite.
 
-## Run the basic local test
+## 1. Basic local test
 
 ```powershell
-python scripts/run_basic_test.py
+python commands/run_basic_pipeline_test.py
 ```
 
-This test verifies the local environment and the full pipeline flow. Expected
-result:
+This is the first command for a new user or reviewer. It calls the standard
+pipeline with the fixed basic-test period 2025-12-13 to 2025-12-19 and verifies
+the local environment, data contract, trading-day rules and DTD flow. It does
+not call Yahoo Finance or the HKMA API.
+
+Expected result:
 
 - 2025-12-13 and 2025-12-14 are reported as Hong Kong-closed dates.
 - 2025-12-15 through 2025-12-19 create five sequential provisional DTD rows.
-- All generated files are written below `runtime/demo_workspace/`.
+- All generated files are written below `runtime/basic_test_workspace/`.
 - `data/` remains unchanged.
 
-To choose another supported replay interval or retain the current workspace:
+To choose another supported basic-test interval or retain the current workspace:
 
 ```powershell
-python scripts/run_basic_test.py --start 20251213 --end 20251219 --keep
+python commands/run_basic_pipeline_test.py --start 20251213 --end 20251219 --keep
 ```
 
-## Daily data review: Checker and Marker
+## 2. Daily data review: Checker and Marker
 
 **Checker** is the daily reviewer. The Checker approves or rejects a normal
 result after automated checks and a provisional DTD are available.
@@ -86,66 +88,82 @@ normal daily approvals; they need Marker review and an audit record.
 To display the daily review table without writing anything, run:
 
 ```powershell
-python scripts/run_checker.py
+python commands/run_daily_review.py
 ```
 
 After reviewing, an explicit decision can be recorded in the generated
 workspace. For example:
 
 ```powershell
-python scripts/run_checker.py --decision APPROVE --checker "Reviewer Name" --dates 20251215 20251216
+python commands/run_daily_review.py --decision APPROVE --checker "Reviewer Name" --dates 20251215 20251216
 ```
 
 Approval is intentionally limited to normal rows with passing automated QC,
-a provisional DTD and no Marker requirement. The baseline file in
-`data/baseline/` is never changed; any release affects only that runtime
+a provisional DTD and no Marker requirement. The confirmed history in
+`data/standard_inputs/` is never changed; any release affects only that runtime
 workspace.
 
-## Run with live market data
+## 3. Live daily pipeline
 
 ```powershell
-python scripts/run_daily.py --date 20251215
+python commands/run_live_daily_pipeline.py --date 20251215
 ```
 
-This command retrieves Yahoo Finance Vanke A/H closes and CNY/HKD FX, and the
-HKMA risk-free rate, then runs the same validation and provisional DTD
-calculation. Use a date covered by the controlled calendar. Source/API failure
-and source-date mismatches are recorded and blocked from the review flow.
+This command calls the same standard pipeline with live sources: Yahoo Finance
+provides Vanke A/H closes and CNY/HKD FX; the HKMA API provides the risk-free
+rate. It writes results only to `runtime/live_daily_workspace/` unless you pass
+`--workspace`.
 
-## Run tests
+To run it automatically each day, configure a scheduler to call this command
+with the required date after the market-data cut-off. The repository provides
+the daily command; scheduling stays outside the code so it can run locally or
+in another environment.
+
+## 4. Demos
+
+The notebooks demonstrate the standard code; they never reproduce the DTD
+calculation.
+
+| Demo | Purpose |
+|---|---|
+| `demos/01_daily_pipeline_demo.ipynb` | Run the basic daily pipeline flow and inspect outputs. |
+| `demos/02_daily_review_demo.ipynb` | Inspect the Checker table and record a decision. |
+| `demos/03_dtd_trading_day_sequence_demo.ipynb` | Show why DTD dates must follow the Hong Kong trading-day sequence. |
+
+## 5. Automated tests
 
 ```powershell
 pytest
 ```
 
-The tests focus on data contracts, calendar gating, sequential DTD processing
-and append-only release rules. They use local inputs and must not make a LIVE
-network request.
+The tests check the basic pipeline run, trading-calendar rules and project file
+layout. They use the fixed basic-test fixture and never make a LIVE network
+request.
 
 ## Repository map
 
 ```text
-src/vanke_dtd/   Canonical callable Python implementation
-scripts/         Simple daily, replay and Checker entry points
-notebooks/       Thin demonstrations that call the package
-tests/           Automated unit/integration tests and small fixtures
-data/            Tracked baseline, controlled and replay inputs
-docs/            Reviewer documentation and reference materials
-runtime/         Generated local workspaces only; ignored by Git
-archive/         Earlier notebooks, documents and out-of-scope analysis
+src/vanke_dtd_pipeline/       Standard shared Python implementation
+commands/                     Commands a user or scheduler runs
+demos/                        Ordered notebooks that demonstrate the standard code
+tests/                        Automated checks of the standard code
+data/standard_inputs/         Confirmed history and controlled daily-run inputs
+data/basic_test_fixture/      Fixed market data for the basic local test only
+runtime/                      Generated local results; ignored by Git
+docs/                         Short guides for reviewers and users
+archive/                      Earlier versions retained only for reference
 ```
 
 ## Public Python API
 
 ```python
-from vanke_dtd.workflow import run_date_range
-from vanke_dtd.checker import build_checker_table, confirm_dates
+from vanke_dtd_pipeline.daily_pipeline_runner import run_date_range
+from vanke_dtd_pipeline.daily_result_reviewer import build_checker_table
 
-result = run_date_range("20251213", "20251219", mode="REPLAY")
+result = run_date_range("20251213", "20251219", mode="BASIC_TEST")
 review = build_checker_table(result.workspace)
 ```
 
-For layer-level review, use `vanke_dtd.ingestion`, `vanke_dtd.quality`,
-`vanke_dtd.sources`, `vanke_dtd.dtd`, `vanke_dtd.store` and
-`vanke_dtd.checker`. Each layer's responsibility is documented in
-[`docs/architecture.md`](docs/architecture.md).
+See [`docs/system_architecture.md`](docs/system_architecture.md) for each
+standard-code module and [`docs/configuration_guide.md`](docs/configuration_guide.md)
+for settings that are safe to change.

@@ -1,7 +1,7 @@
-"""One public entry point for the Vanke daily-input and DTD modules.
+"""Standard runner shared by the live daily run, basic test and demos.
 
-The ingestion/QC stage remains separate from the DTD calculation stage.  This
-module only coordinates them and returns both results to the caller.
+This is the only end-to-end implementation. The basic test and notebooks call
+this module; they do not contain a second DTD calculation.
 """
 
 from __future__ import annotations
@@ -14,14 +14,15 @@ import shutil
 import pandas as pd
 from openpyxl import load_workbook
 
-from . import ingestion
-from .constants import INPUT_COLUMNS
-from .dtd import (
+from . import daily_input_builder
+from .pipeline_config import DEFAULT_COMPANY, INPUT_COLUMNS
+from .daily_dtd_calculator import (
     DailyProcessingResult,
     combine_input_history,
     process_daily_dtd,
 )
-from .repository import repository_data, repository_root, validate_repository_data
+from .project_data_paths import repository_data, repository_root, validate_repository_data
+from .runtime_workspace import WorkspacePaths
 
 
 @dataclass(frozen=True)
@@ -29,7 +30,7 @@ class PipelineResult:
     date: str
     market_case: str
     quality_status: str
-    temporary_action: str
+    pending_review_input_action: str
     dtd_status: str
     dtd: Optional[float]
     wrote_dtd_output: bool
@@ -46,8 +47,8 @@ class RangeRunResult:
     mode: str
     workspace: Path
     daily_results: pd.DataFrame
-    temporary_input: pd.DataFrame
-    temporary_dtd: pd.DataFrame
+    pending_review_input: pd.DataFrame
+    pending_review_dtd_output: pd.DataFrame
     updated_clean_input: pd.DataFrame
 
 
@@ -75,16 +76,17 @@ def run_one_date(
     # copied filenames at its own root. Support both without risking a write to
     # the tracked baseline.
     if (root / "data").is_dir():
-        root = prepare_demo_workspace(root, reset=False)
-    ingestion.configure_project(root)
-    daily = ingestion.process_daily_data(input_date, save_result=True).iloc[0]
+        root = prepare_runtime_workspace(root, reset=False)
+    paths = WorkspacePaths(root)
+    daily_input_builder.configure_runtime_workspace(root)
+    daily = daily_input_builder.process_daily_data(input_date, save_result=True).iloc[0]
 
     dtd_result = process_daily_dtd(
         input_date,
-        confirmed_file=root / "vanke.xlsx",
-        temporary_input_file=root / "vanke_dtd_temporary_data.xlsx",
-        temporary_output_file=root / "temporary_output.xlsx",
-        calendar_file=root / "China_HK_Trading_Calendar.xlsx",
+        confirmed_file=paths.confirmed_history,
+        temporary_input_file=paths.pending_review_input,
+        temporary_output_file=paths.pending_review_output,
+        calendar_file=paths.calendar,
         company=company,
     )
     return _combine_results(daily, dtd_result)
@@ -112,33 +114,33 @@ def run_prepared_date(
     )
 
 
-def prepare_demo_workspace(project_dir=None, workspace_dir=None, reset=True) -> Path:
-    """Create an isolated workspace without changing tracked source inputs."""
+def prepare_runtime_workspace(project_dir=None, workspace_dir=None, reset=True) -> Path:
+    """Create a runtime workspace without changing tracked standard inputs."""
     source = Path(project_dir or repository_root()).resolve()
     data = repository_data(source)
     validate_repository_data(data)
-    workspace = Path(workspace_dir or source / "runtime" / "demo_workspace").resolve()
+    workspace = Path(workspace_dir or source / "runtime" / "pipeline_workspace").resolve()
     workspace.mkdir(parents=True, exist_ok=True)
+    paths = WorkspacePaths(workspace)
 
     required = {
-        data.baseline_vanke: workspace / "vanke.xlsx",
-        data.trading_calendar: workspace / "China_HK_Trading_Calendar.xlsx",
-        data.issued_capital_datalog: workspace / "Vanke Issued Capital DataLog.xlsx",
-        data.risk_free_cache: workspace / "HKMA_Risk_Free_Daily.xlsx",
+        data.confirmed_history: paths.confirmed_history,
+        data.trading_calendar: paths.calendar,
+        data.company_data: paths.company_data,
+        data.risk_free_rate_cache: paths.risk_free_rate_cache,
     }
 
-    if reset or not (workspace / "vanke.xlsx").exists():
+    if reset or not paths.confirmed_history.exists():
         for source_path, workspace_path in required.items():
             shutil.copy2(source_path, workspace_path)
-        for name in (
-            "vanke_dtd_temporary_data.xlsx",
-            "temporary_output.xlsx",
-            "Vanke_Daily_Datalog.xlsx",
+        for path in (
+            paths.pending_review_input,
+            paths.pending_review_output,
+            paths.market_data_audit,
         ):
-            path = workspace / name
             if path.exists():
                 path.unlink()
-        _create_empty_temporary_input(workspace)
+        _create_empty_pending_review_input(paths)
     return workspace
 
 
@@ -148,21 +150,22 @@ def run_date_range(
     *,
     project_dir=None,
     workspace_dir=None,
-    mode="REPLAY",
+    mode="BASIC_TEST",
     reset=True,
-    company=5338,
+    company=DEFAULT_COMPANY,
 ) -> RangeRunResult:
-    """Process every calendar date in an inclusive teacher-selected range.
+    """Process an inclusive range with the standard daily pipeline.
 
-    REPLAY uses the saved source/QC observations for a deterministic demo.
-    LIVE uses the online retrieval functions and writes only inside the demo
-    workspace.  Each selected calendar date produces exactly one summary row.
+    BASIC_TEST reads a fixed saved market-data fixture to verify the local
+    installation. LIVE uses online sources. Both modes call the same daily
+    input and DTD calculation code, and write only inside a runtime workspace.
     """
     source = Path(project_dir or repository_root()).resolve()
-    workspace = prepare_demo_workspace(source, workspace_dir, reset=reset)
+    workspace = prepare_runtime_workspace(source, workspace_dir, reset=reset)
+    paths = WorkspacePaths(workspace)
     mode = str(mode).strip().upper()
-    if mode not in {"REPLAY", "LIVE"}:
-        raise ValueError("mode must be REPLAY or LIVE")
+    if mode not in {"BASIC_TEST", "LIVE"}:
+        raise ValueError("mode must be BASIC_TEST or LIVE")
 
     start = _parse_date(start_date)
     end = _parse_date(end_date)
@@ -170,7 +173,7 @@ def run_date_range(
         raise ValueError("START_DATE must not be later than END_DATE")
 
     calendar = pd.read_excel(
-        workspace / "China_HK_Trading_Calendar.xlsx", sheet_name="Daily Calendar"
+        paths.calendar, sheet_name="Daily Calendar"
     )
     calendar["Date"] = pd.to_datetime(calendar["Date"]).dt.normalize()
     selected = calendar.loc[calendar["Date"].between(start, end)].copy()
@@ -180,8 +183,8 @@ def run_date_range(
             "The selected range is not fully covered by the trading calendar"
         )
 
-    ingestion.configure_project(workspace)
-    replay = _load_replay_rows(source) if mode == "REPLAY" else pd.DataFrame()
+    daily_input_builder.configure_runtime_workspace(workspace)
+    basic_test_data = _load_basic_test_market_data(source) if mode == "BASIC_TEST" else pd.DataFrame()
     summaries = []
     saved_daily_rows = []
 
@@ -193,22 +196,24 @@ def run_date_range(
 
         try:
             if mode == "LIVE":
-                daily = ingestion.process_daily_data(day_text, save_result=True).iloc[0]
+                daily = daily_input_builder.process_daily_data(day_text, save_result=True).iloc[0]
             else:
-                daily = _replay_daily_row(day, calendar_row, replay)
+                daily = _basic_test_daily_row(day, calendar_row, basic_test_data)
+                if "Pending_Review_Input_Action" not in daily:
+                    daily["Pending_Review_Input_Action"] = daily.get("Temporary_Action")
                 if hk_open:
-                    action, conflict = ingestion.update_temporary(daily, True)
+                    action, conflict = daily_input_builder.update_temporary(daily, True)
                     if conflict:
-                        raise RuntimeError("Replay row conflicts with Temporary Input")
-                    daily["Temporary_Action"] = action
+                        raise RuntimeError("Basic-test row conflicts with pending-review Input")
+                    daily["Pending_Review_Input_Action"] = action
                 saved_daily_rows.append(dict(daily))
 
             dtd = process_daily_dtd(
                 day_text,
-                confirmed_file=workspace / "vanke.xlsx",
-                temporary_input_file=workspace / "vanke_dtd_temporary_data.xlsx",
-                temporary_output_file=workspace / "temporary_output.xlsx",
-                calendar_file=workspace / "China_HK_Trading_Calendar.xlsx",
+                confirmed_file=paths.confirmed_history,
+                temporary_input_file=paths.pending_review_input,
+                temporary_output_file=paths.pending_review_output,
+                calendar_file=paths.calendar,
                 company=company,
             )
             summaries.append(
@@ -218,7 +223,7 @@ def run_date_range(
                     "HK_Open": hk_open,
                     "Market_Case": daily.get("Market_Case"),
                     "Input_QC": daily.get("Quality_Status"),
-                    "Temporary_Input_Action": daily.get("Temporary_Action"),
+                    "Pending_Review_Input_Action": daily.get("Pending_Review_Input_Action"),
                     "DTD_Status": dtd.status,
                     "DTD": dtd.dtd,
                     "Message": dtd.message,
@@ -232,26 +237,26 @@ def run_date_range(
                     "HK_Open": hk_open,
                     "Market_Case": _market_case(china_open, hk_open),
                     "Input_QC": "BLOCKED",
-                    "Temporary_Input_Action": "NOT_WRITTEN",
+                    "Pending_Review_Input_Action": "NOT_WRITTEN",
                     "DTD_Status": type(error).__name__,
                     "DTD": None,
                     "Message": str(error),
                 }
             )
 
-    if mode == "REPLAY":
-        _write_replay_datalog(workspace, saved_daily_rows)
+    if mode == "BASIC_TEST":
+        _write_basic_test_audit(paths.market_data_audit, saved_daily_rows)
 
     temporary_input = pd.read_excel(
-        workspace / "vanke_dtd_temporary_data.xlsx", sheet_name="Input"
+        paths.pending_review_input, sheet_name="Input"
     )
-    temporary_dtd_path = workspace / "temporary_output.xlsx"
+    temporary_dtd_path = paths.pending_review_output
     temporary_dtd = (
         pd.read_excel(temporary_dtd_path, sheet_name="Output")
         if temporary_dtd_path.exists()
         else pd.DataFrame(columns=["Comp_no", "Date", "DTD"])
     )
-    confirmed_input = pd.read_excel(workspace / "vanke.xlsx", sheet_name="Input")
+    confirmed_input = pd.read_excel(paths.confirmed_history, sheet_name="Input")
     updated_clean_input = combine_input_history(
         confirmed_input, temporary_input, company=company
     )[INPUT_COLUMNS].copy()
@@ -264,8 +269,8 @@ def run_date_range(
         mode=mode,
         workspace=workspace,
         daily_results=pd.DataFrame(summaries),
-        temporary_input=temporary_input,
-        temporary_dtd=temporary_dtd,
+        pending_review_input=temporary_input,
+        pending_review_dtd_output=temporary_dtd,
         updated_clean_input=updated_clean_input,
     )
 
@@ -275,7 +280,7 @@ def _combine_results(daily: pd.Series, dtd: DailyProcessingResult) -> PipelineRe
         date=pd.Timestamp(daily["Date"]).strftime("%Y-%m-%d"),
         market_case=str(daily["Market_Case"]),
         quality_status=str(daily["Quality_Status"]),
-        temporary_action=str(daily["Temporary_Action"]),
+        pending_review_input_action=str(daily["Pending_Review_Input_Action"]),
         dtd_status=dtd.status,
         dtd=dtd.dtd,
         wrote_dtd_output=dtd.wrote_output,
@@ -301,35 +306,35 @@ def _market_case(china_open: bool, hk_open: bool) -> str:
     return "BOTH_CLOSED"
 
 
-def _create_empty_temporary_input(workspace: Path) -> None:
-    workbook = load_workbook(workspace / "vanke.xlsx")
+def _create_empty_pending_review_input(paths: WorkspacePaths) -> None:
+    workbook = load_workbook(paths.confirmed_history)
     sheet = workbook["Input"]
     if sheet.max_row > 1:
         sheet.delete_rows(2, sheet.max_row - 1)
     for other in list(workbook.worksheets):
         if other.title != "Input":
             workbook.remove(other)
-    workbook.save(workspace / "vanke_dtd_temporary_data.xlsx")
+    workbook.save(paths.pending_review_input)
 
 
-def _load_replay_rows(source: Path) -> pd.DataFrame:
-    path = repository_data(source).replay_datalog
+def _load_basic_test_market_data(source: Path) -> pd.DataFrame:
+    path = repository_data(source).basic_test_market_data
     if not path.exists():
-        raise FileNotFoundError("Vanke_Daily_Datalog.xlsx is required for REPLAY mode")
-    replay = pd.read_excel(path, sheet_name="Daily_Result")
-    replay["Date"] = pd.to_datetime(replay["Date"]).dt.normalize()
-    return replay.sort_values("Date").drop_duplicates("Date", keep="last")
+        raise FileNotFoundError("Basic-test market-data fixture is missing")
+    fixture = pd.read_excel(path, sheet_name="Daily_Result")
+    fixture["Date"] = pd.to_datetime(fixture["Date"]).dt.normalize()
+    return fixture.sort_values("Date").drop_duplicates("Date", keep="last")
 
 
-def _replay_daily_row(day, calendar_row, replay: pd.DataFrame) -> dict:
-    source_row = replay.loc[replay["Date"] == day]
+def _basic_test_daily_row(day, calendar_row, basic_test_data: pd.DataFrame) -> dict:
+    source_row = basic_test_data.loc[basic_test_data["Date"] == day]
     china_open = bool(calendar_row["China_Open"])
     hk_open = bool(calendar_row["HK_Open"])
     if not source_row.empty:
         return source_row.iloc[-1].to_dict()
     if hk_open:
         raise ValueError(
-            f"No saved source snapshot exists for {day.date()}; use LIVE mode or choose a replay date"
+            f"No basic-test market-data row exists for {day.date()}; use LIVE mode or choose a supported test date"
         )
     return {
         "Date": day,
@@ -344,10 +349,10 @@ def _replay_daily_row(day, calendar_row, replay: pd.DataFrame) -> dict:
     }
 
 
-def _write_replay_datalog(workspace: Path, rows) -> None:
+def _write_basic_test_audit(audit_path: Path, rows) -> None:
     daily = pd.DataFrame(rows)
     with pd.ExcelWriter(
-        workspace / "Vanke_Daily_Datalog.xlsx", engine="openpyxl"
+        audit_path, engine="openpyxl"
     ) as writer:
         daily.to_excel(writer, sheet_name="Daily_Result", index=False)
         pd.DataFrame(

@@ -11,16 +11,16 @@ import uuid
 
 import pandas as pd
 
-from .constants import BALANCE_SHEET_COLUMNS, CHINA_TICKER, FX_TICKER, HK_TICKER
-from .quality import check_daily_data
-from .sources import get_hkma_risk_free, get_online_close
-from .store import read_excel_sheet_if_present, save_daily_datalog, update_temporary
-from .workspace import configure_workspace, current_workspace
+from .pipeline_config import BALANCE_SHEET_COLUMNS, CHINA_TICKER, FX_TICKER, HK_TICKER
+from .daily_input_checks import check_daily_data
+from .market_data_sources import get_hkma_risk_free, get_online_close
+from .runtime_file_store import read_excel_sheet_if_present, save_daily_datalog, update_temporary
+from .runtime_workspace import configure_workspace, current_workspace
 
 
-def configure_project(project_dir):
-    """Compatibility alias for configuring one generated workspace."""
-    return configure_workspace(project_dir).root
+def configure_runtime_workspace(workspace_dir):
+    """Configure the isolated runtime workspace for one pipeline run."""
+    return configure_workspace(workspace_dir).root
 
 
 def process_daily_data(input_date, save_result=True):
@@ -42,13 +42,13 @@ def process_daily_data(input_date, save_result=True):
     risk_free = get_hkma_risk_free(data_date, require_exact=hk_open, update_cache=save_result)
     sources = {"CHINA_CLOSE": china, "HK_CLOSE": hk, "FX": fx, "RISK_FREE": risk_free}
 
-    capital = pd.read_excel(paths.issued_capital)
+    capital = pd.read_excel(paths.company_data)
     capital["Time"] = pd.to_datetime(capital["Time"]).dt.normalize()
     capital = capital.loc[capital["Time"] <= data_date].sort_values("Time")
     if capital.empty:
         raise ValueError("No issued-capital data are available as of the input date.")
     capital_row = capital.iloc[-1]
-    full_core = pd.read_excel(paths.confirmed_vanke, sheet_name="Input")
+    full_core = pd.read_excel(paths.confirmed_history, sheet_name="Input")
     full_core["Date"] = pd.to_datetime(full_core["Date"].astype(str), format="%Y%m%d")
     core = full_core.loc[full_core["Date"] <= data_date].sort_values("Date")
     if core.empty:
@@ -67,7 +67,7 @@ def process_daily_data(input_date, save_result=True):
     confirmed_previous = full_core.loc[full_core["Date"] < data_date, ["Date", "CUR_MKT_CAP(HKD)"]].copy()
     confirmed_previous["_source_priority"] = 2
     previous_frames = [confirmed_previous]
-    temporary = read_excel_sheet_if_present(paths.temporary_input, "Input")
+    temporary = read_excel_sheet_if_present(paths.pending_review_input, "Input")
     if not temporary.empty:
         temporary["Date"] = pd.to_datetime(temporary["Date"].astype(str).str.replace(r"\.0$", "", regex=True), format="%Y%m%d")
         temporary = temporary.loc[temporary["Date"] < data_date, ["Date", "CUR_MKT_CAP(HKD)"]].copy()
@@ -93,16 +93,16 @@ def process_daily_data(input_date, save_result=True):
     for column in BALANCE_SHEET_COLUMNS:
         record[column] = float(balance_sheet_row[column])
     record.update(check_daily_data(record, sources))
-    temporary_action, conflict = update_temporary(record, save_result)
+    pending_review_action, conflict = update_temporary(record, save_result)
     if conflict:
         record["Bug_Flag"] = True
         record["Bug_Message"] = " | ".join(item for item in [record["Bug_Message"], "New values conflict with an existing approved Temporary row."] if item)
         record["Quality_Status"], record["Ready_For_DTD"] = "FAIL", False
-    record["Temporary_Action"] = temporary_action
+    record["Pending_Review_Input_Action"] = pending_review_action
     attempts = [{"Run_ID": run_id, "Input_Date": data_date, **attempt} for source in sources.values() for attempt in source["Attempts"]]
     if save_result:
         save_daily_datalog(record, attempts)
     if record["Bug_Flag"] or record["Review_Flag"]:
         saved = "Daily Datalog was saved." if save_result else "Dry run; no file was changed."
-        raise RuntimeError(f"ALERT: data did not pass the Temporary gate. {saved} Temporary was not updated. Bug={record['Bug_Message']} Review={record['Review_Message']}")
+        raise RuntimeError(f"ALERT: data did not pass the pending-review gate. {saved} Pending-review Input was not updated. Bug={record['Bug_Message']} Review={record['Review_Message']}")
     return pd.DataFrame([record])

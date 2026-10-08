@@ -72,7 +72,9 @@ The implementation has four technical stages:
 3. Calculate DTD only for eligible Hong Kong trading dates in continuous order.
 4. Present Temporary Input, Temporary DTD and QC to the Checker before release.
 
-Retrieval and input QC remain in `daily_data_pipeline.py`. Calendar continuity and DTD remain in `dtd_calendar_test_module.py`. `vanke_dtd_pipeline.py` coordinates the two stages and exposes the date-range interface.
+`daily_input_builder.py` prepares and checks daily Input. `daily_dtd_calculator.py`
+enforces calendar continuity and calculates DTD. `daily_pipeline_runner.py`
+coordinates the standard pipeline and exposes the date-range interface.
 
 The submitted Checker notebook implements the normal unchanged-record approval path and blocks any row requiring Marker review. The controlled manual-correction and versioned Production-correction rules above define the required production control. They are deliberately not represented as direct spreadsheet editing.
 
@@ -80,16 +82,17 @@ The submitted Checker notebook implements the normal unchanged-record approval p
 
 | File | Purpose | Write rule |
 |---|---|---|
-| `vanke.xlsx` | Confirmed Input and DTD Output history | Append approved new dates only |
-| `China_HK_Trading_Calendar.xlsx` | Controlled China and Hong Kong open/closed status | Read-only during a run |
-| `Vanke Issued Capital DataLog.xlsx` | Effective-dated shares and financial data | Read the latest record effective on or before the processing date |
-| `HKMA_Risk_Free_Daily.xlsx` | Local HKMA 12-month yield cache | Add an exact-date observation in LIVE mode |
-| `Vanke_Daily_Datalog.xlsx` | Daily result and API-attempt audit | Add or update the daily run record |
-| `vanke_dtd_temporary_data.xlsx` | QC-approved incremental DTD Input | Append eligible new dates; no confirmed history |
-| `temporary_output.xlsx` | Provisional incremental DTD | Append continuous HK trading dates only |
+| `vanke_confirmed_history.xlsx` | Confirmed Input and DTD Output history | Append approved new dates only |
+| `china_hk_trading_calendar.xlsx` | Controlled China and Hong Kong open/closed status | Read-only during a run |
+| `vanke_effective_dated_company_data.xlsx` | Effective-dated shares and financial data | Read the latest record effective on or before the processing date |
+| `hkma_364_day_bill_yield_cache.xlsx` | Local HKMA 12-month yield cache | Add an exact-date observation in LIVE mode |
+| `daily_market_data_audit.xlsx` | Daily result and API-attempt audit | Add or update the daily run record |
+| `daily_dtd_input_pending_review.xlsx` | QC-approved incremental DTD Input | Append eligible new dates; no confirmed history |
+| `daily_dtd_output_pending_review.xlsx` | Provisional incremental DTD | Append continuous HK trading dates only |
 | `Confirmation_Log` sheet | Checker decision and release audit | Append one decision record |
 
-The notebooks use `demo_workspace` so the reviewer can test releases without changing the supplied production baseline.
+The basic test and demos use `basic_test_workspace` so reviewers can test
+releases without changing the supplied confirmed-history baseline.
 
 ## 5 Date-range behavior
 
@@ -106,17 +109,23 @@ This ordering prevents future information from entering an earlier calculation a
 
 ## 6 Demonstration modes
 
-### 6.1 REPLAY mode
+### 6.1 BASIC_TEST profile
 
-REPLAY is the default marking mode. It reads saved daily source and QC observations from the supplied audit workbook. It does not call an external API. This makes the demonstration deterministic and isolates the reviewer from network availability, vendor changes and historical API revisions.
+`BASIC_TEST` is the fixed local test profile. It reads saved daily source and QC
+observations from `data/basic_test_fixture/` and does not call an external API.
+This makes the test deterministic and isolates reviewers from network
+availability, vendor changes and historical API revisions.
 
-REPLAY still applies the same calendar gate, Temporary Input schema, DTD calculation, trading-day continuity and approval controls. An HK-open date without a saved replay observation is blocked with a clear message.
+`BASIC_TEST` still applies the same calendar gate, pending-review Input schema,
+DTD calculation, trading-day continuity and approval controls. An HK-open date
+without a saved basic-test observation is blocked with a clear message.
 
 ### 6.2 LIVE mode
 
 LIVE calls Yahoo Finance for China Vanke A-share close, Hong Kong Vanke close and CNY/HKD FX, and calls the HKMA endpoint for the 364-day Exchange Fund Bill yield. Each request uses bounded retries and records each attempt. A source failure or exact-date mismatch cannot enter Temporary Input.
 
-LIVE mode is useful for demonstrating retrieval, but REPLAY is the appropriate default for grading because the result does not depend on network state.
+LIVE mode is the standard daily retrieval path. `BASIC_TEST` is appropriate for
+local verification because its result does not depend on network state.
 
 ## 7 Data sources and automated access
 
@@ -129,7 +138,11 @@ LIVE mode is useful for demonstrating retrieval, but REPLAY is the appropriate d
 | Trading-day status | Supplied controlled calendar | Local `Daily Calendar` sheet | Coverage must be maintained and independently reviewed |
 | Issued capital and financial inputs | Supplied Vanke DataLog and confirmed history | Effective-dated local records | New disclosures require a new reviewed DataLog record |
 
-The online calls are parameterized by data date, use bounded retries and store attempt-level evidence. A successful response is not enough by itself: the returned source date and numeric value must also pass QC. REPLAY mode uses previously saved daily observations so grading remains repeatable when external services are unavailable.
+The online calls are parameterized by data date, use bounded retries and store
+attempt-level evidence. A successful response is not enough by itself: the
+returned source date and numeric value must also pass QC. `BASIC_TEST` uses
+previously saved daily observations so local verification remains repeatable
+when external services are unavailable.
 
 ## 8 Market-day rules
 
