@@ -14,12 +14,14 @@ import shutil
 import pandas as pd
 from openpyxl import load_workbook
 
-import daily_data_pipeline as ingestion
-from dtd_calendar_test_module import (
+from . import ingestion
+from .constants import INPUT_COLUMNS
+from .dtd import (
     DailyProcessingResult,
     combine_input_history,
     process_daily_dtd,
 )
+from .repository import repository_data, repository_root, validate_repository_data
 
 
 @dataclass(frozen=True)
@@ -68,7 +70,12 @@ def run_one_date(
             "stages. Use run_prepared_date() for a no-production-file test."
         )
 
-    root = Path(project_dir or Path(__file__).resolve().parent).resolve()
+    root = Path(project_dir or repository_root()).resolve()
+    # A repository root holds tracked inputs under data/; a workspace holds
+    # copied filenames at its own root. Support both without risking a write to
+    # the tracked baseline.
+    if (root / "data").is_dir():
+        root = prepare_demo_workspace(root, reset=False)
     ingestion.configure_project(root)
     daily = ingestion.process_daily_data(input_date, save_result=True).iloc[0]
 
@@ -105,25 +112,24 @@ def run_prepared_date(
     )
 
 
-def prepare_demo_workspace(project_dir, workspace_dir=None, reset=True) -> Path:
-    """Create an isolated workspace for a repeatable teacher demonstration."""
-    source = Path(project_dir).resolve()
-    workspace = Path(workspace_dir or source / "demo_workspace").resolve()
+def prepare_demo_workspace(project_dir=None, workspace_dir=None, reset=True) -> Path:
+    """Create an isolated workspace without changing tracked source inputs."""
+    source = Path(project_dir or repository_root()).resolve()
+    data = repository_data(source)
+    validate_repository_data(data)
+    workspace = Path(workspace_dir or source / "runtime" / "demo_workspace").resolve()
     workspace.mkdir(parents=True, exist_ok=True)
 
-    required = [
-        "vanke.xlsx",
-        "China_HK_Trading_Calendar.xlsx",
-        "Vanke Issued Capital DataLog.xlsx",
-        "HKMA_Risk_Free_Daily.xlsx",
-    ]
-    for name in required:
-        if not (source / name).exists():
-            raise FileNotFoundError(f"Required demo file is missing: {source / name}")
+    required = {
+        data.baseline_vanke: workspace / "vanke.xlsx",
+        data.trading_calendar: workspace / "China_HK_Trading_Calendar.xlsx",
+        data.issued_capital_datalog: workspace / "Vanke Issued Capital DataLog.xlsx",
+        data.risk_free_cache: workspace / "HKMA_Risk_Free_Daily.xlsx",
+    }
 
     if reset or not (workspace / "vanke.xlsx").exists():
-        for name in required:
-            shutil.copy2(source / name, workspace / name)
+        for source_path, workspace_path in required.items():
+            shutil.copy2(source_path, workspace_path)
         for name in (
             "vanke_dtd_temporary_data.xlsx",
             "temporary_output.xlsx",
@@ -152,7 +158,7 @@ def run_date_range(
     LIVE uses the online retrieval functions and writes only inside the demo
     workspace.  Each selected calendar date produces exactly one summary row.
     """
-    source = Path(project_dir or Path(__file__).resolve().parent).resolve()
+    source = Path(project_dir or repository_root()).resolve()
     workspace = prepare_demo_workspace(source, workspace_dir, reset=reset)
     mode = str(mode).strip().upper()
     if mode not in {"REPLAY", "LIVE"}:
@@ -248,7 +254,7 @@ def run_date_range(
     confirmed_input = pd.read_excel(workspace / "vanke.xlsx", sheet_name="Input")
     updated_clean_input = combine_input_history(
         confirmed_input, temporary_input, company=company
-    )[ingestion.TEMPORARY_COLUMNS].copy()
+    )[INPUT_COLUMNS].copy()
     updated_clean_input["Date"] = (
         pd.to_datetime(updated_clean_input["Date"]).dt.strftime("%Y%m%d").astype(int)
     )
@@ -307,7 +313,7 @@ def _create_empty_temporary_input(workspace: Path) -> None:
 
 
 def _load_replay_rows(source: Path) -> pd.DataFrame:
-    path = source / "Vanke_Daily_Datalog.xlsx"
+    path = repository_data(source).replay_datalog
     if not path.exists():
         raise FileNotFoundError("Vanke_Daily_Datalog.xlsx is required for REPLAY mode")
     replay = pd.read_excel(path, sheet_name="Daily_Result")

@@ -13,7 +13,8 @@ venv/
 .mypy_cache/
 
 # Generated demonstration workspaces and Temporary test artifacts
-demo_workspace/
+runtime/*
+!runtime/.gitkeep
 Temporary/
 temporary/
 temporary_output.xlsx

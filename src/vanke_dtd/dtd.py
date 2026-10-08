@@ -1,4 +1,4 @@
-"""Calendar-gated daily DTD test module.
+"""Calendar-gated daily DTD calculation module.
 
 The module reads confirmed history from ``vanke.xlsx``, reads incremental rows
 from ``data_temporary.xlsx``, and appends successful results to a separate
@@ -22,6 +22,8 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 from scipy.optimize import brentq, minimize_scalar
 from scipy.stats import norm
+
+from .constants import DTD_DELTA, DTD_LOOKBACK_DAYS, DTD_MIN_OBSERVATIONS, DTD_TRADING_DAYS_PER_YEAR
 
 
 COLS = {
@@ -288,7 +290,7 @@ def _rate_to_decimal(value: float) -> float:
     return value / 100.0 if abs(value) > 1.0 else value
 
 
-def add_model_fields(frame: pd.DataFrame, delta: float = 0.5) -> pd.DataFrame:
+def add_model_fields(frame: pd.DataFrame, delta: float = DTD_DELTA) -> pd.DataFrame:
     if not 0.0 <= delta <= 1.0:
         raise InputDataError("delta must be between 0 and 1")
     data = frame.copy().sort_values(COLS["date"]).reset_index(drop=True)
@@ -345,10 +347,10 @@ def implied_asset_value(
 def estimate_sigma(
     history: pd.DataFrame,
     as_of: pd.Timestamp,
-    delta: float = 0.5,
-    lookback_days: int = 365,
-    min_obs: int = 50,
-    trading_days_per_year: int = 250,
+    delta: float = DTD_DELTA,
+    lookback_days: int = DTD_LOOKBACK_DAYS,
+    min_obs: int = DTD_MIN_OBSERVATIONS,
+    trading_days_per_year: int = DTD_TRADING_DAYS_PER_YEAR,
     sigma_bounds: tuple[float, float] = (0.005, 1.50),
 ) -> tuple[float, pd.DataFrame]:
     data = add_model_fields(history, delta)
@@ -413,10 +415,10 @@ def estimate_sigma(
 def calculate_dtd(
     history: pd.DataFrame,
     as_of: pd.Timestamp,
-    delta: float = 0.5,
-    lookback_days: int = 365,
-    min_obs: int = 50,
-    trading_days_per_year: int = 250,
+    delta: float = DTD_DELTA,
+    lookback_days: int = DTD_LOOKBACK_DAYS,
+    min_obs: int = DTD_MIN_OBSERVATIONS,
+    trading_days_per_year: int = DTD_TRADING_DAYS_PER_YEAR,
 ) -> DTDResult:
     data = add_model_fields(history, delta)
     data = data[data[COLS["date"]] <= as_of].copy()
@@ -621,10 +623,10 @@ def process_daily_dtd(
     temporary_input_sheet: str = "Input",
     temporary_output_sheet: str = "Output",
     calendar_sheet: str = "Daily Calendar",
-    delta: float = 0.5,
-    lookback_days: int = 365,
-    min_obs: int = 50,
-    trading_days_per_year: int = 250,
+    delta: float = DTD_DELTA,
+    lookback_days: int = DTD_LOOKBACK_DAYS,
+    min_obs: int = DTD_MIN_OBSERVATIONS,
+    trading_days_per_year: int = DTD_TRADING_DAYS_PER_YEAR,
     write_output: bool = True,
 ) -> DailyProcessingResult:
     """Validate one date, calculate DTD when eligible, and append temporary output.

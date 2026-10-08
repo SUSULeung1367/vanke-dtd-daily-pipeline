@@ -18,67 +18,39 @@ import requests
 import yfinance as yf
 from openpyxl import load_workbook
 
+from .constants import (
+    BALANCE_SHEET_COLUMNS,
+    CHINA_TICKER,
+    FX_MAX,
+    FX_MIN,
+    FX_TICKER,
+    HKMA_URL,
+    HK_TICKER,
+    INPUT_COLUMNS as TEMPORARY_COLUMNS,
+    MAX_ATTEMPTS,
+    MAX_FX_CHANGE,
+    MAX_MARKET_CAP_CHANGE,
+    MAX_PRICE_CHANGE,
+    MAX_RISK_FREE_CHANGE_PP,
+    REQUEST_TIMEOUT,
+    RETRY_DELAYS_SECONDS,
+    RISK_FREE_MAX,
+    RISK_FREE_MIN,
+)
+from .workspace import configure_workspace
+
 
 # ============================================================
 # MODULE 1 - CONFIGURATION
 # ============================================================
 
-PROJECT_DIR = Path(
-    os.environ.get("DTD_PROJECT_DIR", Path(__file__).resolve().parent)
-).resolve()
-
-CORE_FILE = PROJECT_DIR / "vanke.xlsx"
-CALENDAR_FILE = PROJECT_DIR / "China_HK_Trading_Calendar.xlsx"
-ISSUED_CAPITAL_FILE = PROJECT_DIR / "Vanke Issued Capital DataLog.xlsx"
-RISK_FREE_FILE = PROJECT_DIR / "HKMA_Risk_Free_Daily.xlsx"
-
-DAILY_DATALOG_FILE = PROJECT_DIR / "Vanke_Daily_Datalog.xlsx"
-TEMPORARY_INPUT_FILE = PROJECT_DIR / "vanke_dtd_temporary_data.xlsx"
-
-CHINA_TICKER = "000002.SZ"
-HK_TICKER = "2202.HK"
-FX_TICKER = "CNYHKD=X"
-
-HKMA_URL = (
-    "https://api.hkma.gov.hk/public/market-data-and-statistics/"
-    "monthly-statistical-bulletin/efbn/efbn-yield-daily"
-)
-
-MAX_ATTEMPTS = 5
-RETRY_DELAYS_SECONDS = [0, 1, 2, 4, 8]
-REQUEST_TIMEOUT = (4, 8)
-
-# Plausibility and manual-review thresholds.
-FX_MIN = 0.50
-FX_MAX = 2.00
-RISK_FREE_MIN = -5.00
-RISK_FREE_MAX = 20.00
-MAX_PRICE_CHANGE = 0.30
-MAX_FX_CHANGE = 0.05
-MAX_RISK_FREE_CHANGE_PP = 1.00
-MAX_MARKET_CAP_CHANGE = 0.30
-
-TEMPORARY_COLUMNS = [
-    "Comp_no",
-    "Date",
-    "CUR_MKT_CAP(HKD)",
-    "BS_CUR_LIAB(HKD)",
-    "BS_LT_BORROW(HKD)",
-    "BS_TOT_LIAB2(HKD)",
-    "BS_TOT_ASSET(HKD)",
-    "Risk_Free_Rate",
-]
-
-BALANCE_SHEET_COLUMNS = [
-    "BS_CUR_LIAB(HKD)",
-    "BS_LT_BORROW(HKD)",
-    "BS_TOT_LIAB2(HKD)",
-    "BS_TOT_ASSET(HKD)",
-]
-
-YFINANCE_CACHE_DIR = PROJECT_DIR / ".yfinance_cache"
-YFINANCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-yf.set_tz_cache_location(str(YFINANCE_CACHE_DIR))
+PROJECT_DIR = None
+CORE_FILE = None
+CALENDAR_FILE = None
+ISSUED_CAPITAL_FILE = None
+RISK_FREE_FILE = None
+DAILY_DATALOG_FILE = None
+TEMPORARY_INPUT_FILE = None
 
 
 def configure_project(project_dir):
@@ -89,18 +61,15 @@ def configure_project(project_dir):
     """
     global PROJECT_DIR, CORE_FILE, CALENDAR_FILE, ISSUED_CAPITAL_FILE
     global RISK_FREE_FILE, DAILY_DATALOG_FILE, TEMPORARY_INPUT_FILE
-    global YFINANCE_CACHE_DIR
 
-    PROJECT_DIR = Path(project_dir).expanduser().resolve()
-    CORE_FILE = PROJECT_DIR / "vanke.xlsx"
-    CALENDAR_FILE = PROJECT_DIR / "China_HK_Trading_Calendar.xlsx"
-    ISSUED_CAPITAL_FILE = PROJECT_DIR / "Vanke Issued Capital DataLog.xlsx"
-    RISK_FREE_FILE = PROJECT_DIR / "HKMA_Risk_Free_Daily.xlsx"
-    DAILY_DATALOG_FILE = PROJECT_DIR / "Vanke_Daily_Datalog.xlsx"
-    TEMPORARY_INPUT_FILE = PROJECT_DIR / "vanke_dtd_temporary_data.xlsx"
-    YFINANCE_CACHE_DIR = PROJECT_DIR / ".yfinance_cache"
-    YFINANCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    yf.set_tz_cache_location(str(YFINANCE_CACHE_DIR))
+    paths = configure_workspace(project_dir)
+    PROJECT_DIR = paths.root
+    CORE_FILE = paths.confirmed_vanke
+    CALENDAR_FILE = paths.calendar
+    ISSUED_CAPITAL_FILE = paths.issued_capital
+    RISK_FREE_FILE = paths.risk_free_cache
+    DAILY_DATALOG_FILE = paths.daily_datalog
+    TEMPORARY_INPUT_FILE = paths.temporary_input
     return PROJECT_DIR
 
 

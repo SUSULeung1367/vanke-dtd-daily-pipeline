@@ -1,101 +1,151 @@
 # Vanke Daily DTD Pipeline
 
-This repository contains an offline-replayable demonstration of the Vanke daily data-to-DTD workflow. It separates daily input/QC, calendar-controlled DTD calculation, and Checker-controlled append-only release.
+A reviewable, replayable, production-oriented data-engineering monitoring
+template for a daily China Vanke Distance-to-Default (DTD) workflow. The
+repository separates market-data preparation, quality control, DTD calculation
+and human release. It demonstrates how an incremental daily pipeline can be
+inspected, replayed and tested without overwriting confirmed history.
 
-The controlled Excel inputs and the saved daily observation log are tracked because they are required for deterministic `REPLAY` mode. Generated workspaces, Temporary Input/Output files, and local caches are deliberately excluded from Git.
+## Why DTD matters
 
-## Setup
+DTD is a structural credit-risk valuation signal. It combines the market's
+daily pricing of Vanke equity with liabilities and the risk-free rate to infer
+an unobserved market value of assets and measure its buffer above the firm's
+default point. This provides an additional way to monitor how daily
+market-price movements are reflected in the firm's implied credit condition.
+It complements, rather than replaces, observation of the share price itself.
 
-Open a terminal in this folder and run:
+DTD is not a fair-value estimate for the share price and is not investment
+advice. This repository is a reviewable demonstration template for a
+production-style monitoring workflow, not a deployed production service.
 
-```bash
-conda create -n vanke-dtd python=3.13 -y
-conda activate vanke-dtd
-python -m pip install -r requirements.txt
-jupyter notebook
-```
+## What this pipeline does
 
-Keep all supplied Python, notebook and Excel files in the same project folder. `REPLAY` is deterministic and offline; `LIVE` calls Yahoo Finance and HKMA and should be used only when live retrieval is intended.
+1. Prepares the daily Vanke DTD input from market prices, CNY/HKD FX,
+   effective-dated company information and the HKMA bill yield.
+2. Calculates a daily provisional DTD for the next eligible Hong Kong trading
+   date.
+3. Checks source dates, plausibility and day-on-day movements before a result
+   can be reviewed.
 
-## Script entry points
+## Start here
 
-- `vanke_dtd_pipeline.py` coordinates a range run in an isolated workspace.
-- `daily_data_pipeline.py` handles retrieval/replay, QC, and Temporary Input preparation.
-- `dtd_calendar_test_module.py` applies calendar controls and calculates DTD.
-- `vanke_data_confirm_checker.py` builds the Checker review table and performs atomic, append-only approval or rejection.
+| If you want to... | Read or run... |
+|---|---|
+| Understand the architecture | [`docs/architecture.md`](docs/architecture.md) |
+| Understand every tracked dataset | [`docs/data_dictionary.md`](docs/data_dictionary.md) |
+| Understand configuration | [`docs/configuration.md`](docs/configuration.md) |
+| Understand the Checker/Marker rule | [`docs/governance.md`](docs/governance.md) |
+| Check that the project works locally | `python scripts/run_basic_test.py` |
+| Inspect or apply a Checker decision | `python scripts/run_checker.py` |
+| Run one date with live market data | `python scripts/run_daily.py --date YYYYMMDD` |
 
-`Vanke_Daily_Datalog.xlsx` is the controlled source of saved observations for `REPLAY`; do not remove it from the project.
+## Environment setup
 
-## Step 1 Run the date-range demo
-
-Open `vanke_pipeline_demo.ipynb`.
-
-Change only:
-
-```python
-START_DATE = "20251213"
-END_DATE = "20251219"
-```
-
-Then use **Restart Kernel and Run All Cells**.
-
-- The range is inclusive.
-- One selected calendar day produces one Daily Result row.
-- Three selected calendar days produce three Daily Result rows.
-- Weekends and HK holidays are shown as skipped and do not produce DTD.
-- The notebook prints Daily QC, Vanke Temporary Input, Temporary DTD and the updated clean DTD Input table.
-- The default `MODE = "REPLAY"` is deterministic and does not call an API.
-- Set `MODE = "LIVE"` only when live Yahoo Finance and HKMA retrieval is required.
-
-All notebook demo writes go to `demo_workspace`. The original `vanke.xlsx` is not changed. `demo_workspace` and all generated Temporary artifacts are ignored by Git.
-
-## Data sources
-
-- Yahoo Finance through `yfinance`: Vanke A-share close (`000002.SZ`), Vanke H-share close (`2202.HK`) and CNY/HKD FX (`CNYHKD=X`).
-- Hong Kong Monetary Authority API: 364-day Exchange Fund Bill yield used as the 12-month risk-free proxy.
-- Supplied controlled files: trading calendar, issued capital, balance-sheet inputs and confirmed history.
-
-The A-share market value is converted from CNY to HKD with the daily CNY/HKD rate. The H-share market value is already in HKD. Both are divided by 1,000,000 so market capitalization and balance-sheet fields use HKD millions. Full URLs, transformations and limitations are in the technical specification.
-
-## Step 2 Review and confirm
-
-Open `vanke_data_confirm_cheker.ipynb` after Step 1.
-
-1. Run the setup and review cells.
-2. Read the combined table containing Temporary Input, DTD and QC.
-3. Enter the Checker name and dates.
-4. Change `CHECKER_DECISION` from `"PENDING"` to `"APPROVE"` or `"REJECT"`.
-5. Run the confirmation cell.
-
-Only rows with passing automated QC, a calculated DTD and no Marker requirement can be released by the normal Checker path. Approval appends Input and Output rows to the workspace's `vanke.xlsx` and records a confirmation-log entry; historical rows are never overwritten. A rejection is recorded without releasing the data.
-
-## Reproducible verification
-
-Run REPLAY in a new temporary workspace rather than the repository root:
+Use Python 3.11 to 3.13. The commands below use a local virtual environment so
+the project dependencies do not affect other Python projects.
 
 ```powershell
-@'
-from pathlib import Path
-import tempfile
-from vanke_dtd_pipeline import run_date_range
-
-workspace = Path(tempfile.mkdtemp(prefix="vanke-dtd-replay-"))
-result = run_date_range(
-    "20251213", "20251219",
-    project_dir=Path.cwd(),
-    workspace_dir=workspace,
-    mode="REPLAY",
-    reset=True,
-)
-print(result.workspace)
-print(result.daily_results.to_string(index=False))
-'@ | python
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-Then use `vanke_data_confirm_cheker.ipynb`, or `build_checker_table()` and `confirm_dates()` from `vanke_data_confirm_checker.py`, to review and approve only the passing, pending rows. A clean verification on 2026-10-02 confirmed that 2025-12-13 and 2025-12-14 were skipped as HK-closed dates, while 2025-12-15 through 2025-12-19 passed QC, produced DTD outputs, and changed from `PENDING_CHECKER` to `RELEASED` after approval.
+The installation makes the `src/vanke_dtd` package available and installs
+`pytest` for the test suite.
 
-## Repository hygiene
+## Run the basic local test
 
-Source code, notebooks, specifications, controlled inputs, and the replay data log are tracked. `.gitignore` excludes caches, `demo_workspace`, Jupyter/editor by-products, `temporary_output.xlsx`, `vanke_dtd_temporary_data.xlsx`, and the Checker's atomic intermediate files. Create a fresh isolated workspace for every demo or validation run.
+```powershell
+python scripts/run_basic_test.py
+```
 
-Detailed design is in `VANKE_DTD_PRODUCTION_WORKFLOW_AND_CONTROL_SPECIFICATION.md`. Section 2 gives the full production process and Checker/Marker responsibilities. Section 12 gives the DTD assumptions, equations and limitations.
+This test verifies the local environment and the full pipeline flow. Expected
+result:
+
+- 2025-12-13 and 2025-12-14 are reported as Hong Kong-closed dates.
+- 2025-12-15 through 2025-12-19 create five sequential provisional DTD rows.
+- All generated files are written below `runtime/demo_workspace/`.
+- `data/` remains unchanged.
+
+To choose another supported replay interval or retain the current workspace:
+
+```powershell
+python scripts/run_basic_test.py --start 20251213 --end 20251219 --keep
+```
+
+## Daily data review: Checker and Marker
+
+**Checker** is the daily reviewer. The Checker approves or rejects a normal
+result after automated checks and a provisional DTD are available.
+
+**Marker** handles warnings, data exceptions and manual changes. These are not
+normal daily approvals; they need Marker review and an audit record.
+
+To display the daily review table without writing anything, run:
+
+```powershell
+python scripts/run_checker.py
+```
+
+After reviewing, an explicit decision can be recorded in the generated
+workspace. For example:
+
+```powershell
+python scripts/run_checker.py --decision APPROVE --checker "Reviewer Name" --dates 20251215 20251216
+```
+
+Approval is intentionally limited to normal rows with passing automated QC,
+a provisional DTD and no Marker requirement. The baseline file in
+`data/baseline/` is never changed; any release affects only that runtime
+workspace.
+
+## Run with live market data
+
+```powershell
+python scripts/run_daily.py --date 20251215
+```
+
+This command retrieves Yahoo Finance Vanke A/H closes and CNY/HKD FX, and the
+HKMA risk-free rate, then runs the same validation and provisional DTD
+calculation. Use a date covered by the controlled calendar. Source/API failure
+and source-date mismatches are recorded and blocked from the review flow.
+
+## Run tests
+
+```powershell
+pytest
+```
+
+The tests focus on data contracts, calendar gating, sequential DTD processing
+and append-only release rules. They use local inputs and must not make a LIVE
+network request.
+
+## Repository map
+
+```text
+src/vanke_dtd/   Canonical callable Python implementation
+scripts/         Simple daily, replay and Checker entry points
+notebooks/       Thin demonstrations that call the package
+tests/           Automated unit/integration tests and small fixtures
+data/            Tracked baseline, controlled and replay inputs
+docs/            Reviewer documentation and reference materials
+runtime/         Generated local workspaces only; ignored by Git
+archive/         Earlier notebooks, documents and out-of-scope analysis
+```
+
+## Public Python API
+
+```python
+from vanke_dtd.workflow import run_date_range
+from vanke_dtd.checker import build_checker_table, confirm_dates
+
+result = run_date_range("20251213", "20251219", mode="REPLAY")
+review = build_checker_table(result.workspace)
+```
+
+For layer-level review, use `vanke_dtd.ingestion`, `vanke_dtd.quality`,
+`vanke_dtd.sources`, `vanke_dtd.dtd`, `vanke_dtd.store` and
+`vanke_dtd.checker`. Each layer's responsibility is documented in
+[`docs/architecture.md`](docs/architecture.md).
