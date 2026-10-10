@@ -33,7 +33,7 @@ production-style monitoring workflow, not a deployed production service.
 |---|---|
 | Check that the project works on your computer | `python commands/run_basic_pipeline_test.py` |
 | Run the daily pipeline with live market data | `python commands/run_live_daily_pipeline.py --date YYYYMMDD` |
-| Review or approve daily results | `python commands/run_daily_review.py` |
+| Review or approve daily results | `python commands/run_checker_daily_review.py` |
 | Understand the standard code | [`docs/system_architecture.md`](docs/system_architecture.md) |
 | Understand the input files | [`docs/data_guide.md`](docs/data_guide.md) |
 | Understand Checker and Marker | [`docs/daily_review_guide.md`](docs/daily_review_guide.md) |
@@ -88,14 +88,14 @@ normal daily approvals; they need Marker review and an audit record.
 To display the daily review table without writing anything, run:
 
 ```powershell
-python commands/run_daily_review.py
+python commands/run_checker_daily_review.py
 ```
 
 After reviewing, an explicit decision can be recorded in the generated
 workspace. For example:
 
 ```powershell
-python commands/run_daily_review.py --decision APPROVE --checker "Reviewer Name" --dates 20251215 20251216
+python commands/run_checker_daily_review.py --decision APPROVE --checker "Reviewer Name" --dates 20251215 20251216
 ```
 
 Approval is intentionally limited to normal rows with passing automated QC,
@@ -158,7 +158,7 @@ archive/                      Earlier versions retained only for reference
 
 ```python
 from vanke_dtd_pipeline.daily_pipeline_runner import run_date_range
-from vanke_dtd_pipeline.daily_result_reviewer import build_checker_table
+from vanke_dtd_pipeline.checker_daily_result_reviewer import build_checker_table
 
 result = run_date_range("20251213", "20251219", mode="BASIC_TEST")
 review = build_checker_table(result.workspace)

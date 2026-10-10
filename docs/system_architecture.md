@@ -18,7 +18,7 @@ tests do not contain a second copy of the DTD calculation.
 | `daily_input_builder.py` | Build one daily DTD Input and its audit record. |
 | `runtime_file_store.py` | Write pending-review Input and market-data audit files. |
 | `daily_dtd_calculator.py` | Trading-day sequence, asset-value estimation and DTD calculation. |
-| `daily_result_reviewer.py` | Checker table, approval/rejection and append-only release. |
+| `checker_daily_result_reviewer.py` | Checker table, approval/rejection and append-only release. |
 | `daily_pipeline_runner.py` | The shared end-to-end runner used by every run mode. |
 
 ## Run profiles

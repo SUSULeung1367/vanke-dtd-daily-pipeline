@@ -3,7 +3,7 @@ import pandas as pd
 from vanke_dtd_pipeline.daily_pipeline_runner import run_date_range
 
 
-def test_basic_test_produces_the_five_expected_trading_day_outputs(tmp_path):
+def test_fixed_five_day_basic_test_creates_pending_review_dtd_outputs(tmp_path):
     result = run_date_range(
         "20251213",
         "20251219",

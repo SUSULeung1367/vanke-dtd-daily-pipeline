@@ -17,7 +17,7 @@ reader can see they belong only to that test command.
 |---|---|---|---|
 | `python commands/run_basic_pipeline_test.py` | Checks that the standard pipeline works locally for the known five-day case. | `data/basic_test_fixture/` | `runtime/basic_test_workspace/` |
 | `python commands/run_live_daily_pipeline.py --date YYYYMMDD` | Runs the standard daily pipeline for one requested date. | Yahoo Finance, HKMA and `data/standard_inputs/` | `runtime/live_daily_workspace/` |
-| `python commands/run_daily_review.py` | Shows or records Checker decisions for a workspace. | Generated runtime files | `runtime/basic_test_workspace/` |
+| `python commands/run_checker_daily_review.py` | Shows or records Checker decisions for a workspace. | Generated runtime files | `runtime/basic_test_workspace/` |
 
 For any command, `--workspace` selects a different generated workspace and
 `--keep` reuses it rather than resetting it.

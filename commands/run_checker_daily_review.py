@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from vanke_dtd_pipeline.daily_result_reviewer import build_checker_table, confirm_dates
+from vanke_dtd_pipeline.checker_daily_result_reviewer import build_checker_table, confirm_dates
 
 
 def main() -> None:
